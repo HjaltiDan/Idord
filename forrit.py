@@ -721,43 +721,49 @@ def main():
     #Internal: Test code ends
     """
 
+    file_text = []
     with open(file_input, "r", encoding="utf-8") as file_in:
+        for file_line in iter(file_in.readline, ''):
+            newline_s_full = str(file_line)
+            newline_s_clean = newline_s_full.rstrip()
+            if( newline_s_clean ):
+                file_text.append(newline_s_clean)
+    file_in.close()      
 
-        if( use_reynir ):
-            for newline in iter(file_in.readline, ''):
-                    tokenized_line = line_tokenize(newline)
-                    pos_tagged_line = line_tag(tokenized_line, r)
-                    lemmatized_line = line_lemmatize(pos_tagged_line)
-                    parse(lemmatized_line)
-        else:
-            tokenized_text = []
-            lemmatized_text = []
-            for newline in iter(file_in.readline, ''):
-                tokenized_line = line_tokenize(newline)
-                tokenized_text.append(tokenized_line)
-        
-            """
-            Note that this function call effectively hardcodes use of the "Light" model.
-            We can also use the far more detailed "Full" model, but that requires 16 GB 
-            of RAM and will obviously take longer at runtime.
-            """
-            abl_tagged_file = text_tag(tokenized_text, "Light")
-            lemmatized_text = text_lemmatize(abl_tagged_file)
-            for item in lemmatized_text:
-                parse(item)
-        file_in.close()
-        
-        calculate_c_values()
-        if( known_terms_exist ):
-            find_levenshtein_distances()
-            find_common_roots()
+    if( use_reynir ):
+        for newline in file_text:
+            tokenized_line = line_tokenize(newline)
+            pos_tagged_line = line_tag(tokenized_line, r)
+            lemmatized_line = line_lemmatize(pos_tagged_line)
+            parse(lemmatized_line)
+    else:
+        tokenized_text = []
+        lemmatized_text = []
+        for newline in file_text:
+            tokenized_line = line_tokenize(newline)
+            tokenized_text.append(tokenized_line)
+    
+        """
+        Note that this function call effectively hardcodes use of the "Light" model.
+        We can also use the far more detailed "Full" model, but that requires 16 GB 
+        of RAM and will obviously take longer at runtime.
+        """
+        abl_tagged_file = text_tag(tokenized_text, "Light")
+        lemmatized_text = text_lemmatize(abl_tagged_file)
+        for item in lemmatized_text:
+            parse(item)
 
-        if( known_terms_exist ):
-            result_list = filter_results(threshold_c_value, threshold_l_distance, threshold_s_ratio)
-        else:
-            result_list = filter_results(threshold_c_value)
+    calculate_c_values()
+    if( known_terms_exist ):
+        find_levenshtein_distances()
+        find_common_roots()
 
-        output_results(file_output, result_list, known_terms_exist)
+    if( known_terms_exist ):
+        result_list = filter_results(threshold_c_value, threshold_l_distance, threshold_s_ratio)
+    else:
+        result_list = filter_results(threshold_c_value)
+
+    output_results(file_output, result_list, known_terms_exist)
 
     """
     #Internal code for gold standard validation and for speed-testing
