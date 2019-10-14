@@ -280,17 +280,19 @@ class TermExtractor():
         return outputs
 
 
-    def add_candidate_to_global_list(self, candidate_string):
+    def add_candidate_to_global_list(self, candidate_string, term_candidate_list = None):
+        if term_candidate_list is None:
+            term_candidate_list = self.term_candidate_list
         term_wordcount = len(candidate_string.split())
         term_already_exists = False
 
-        for existing_entry in self.term_candidate_list:
+        for existing_entry in term_candidate_list:
             if existing_entry[0] == candidate_string:
                 term_already_exists = True
                 existing_entry[1] += 1
                 break
         if not term_already_exists:
-            self.term_candidate_list.append([candidate_string, 1, 0, 0, term_wordcount, 0.0, 0, -1.0])
+            term_candidate_list.append([candidate_string, 1, 0, 0, term_wordcount, 0.0, 0, -1.0])
 
 
     def check_for_stopwords(self, candidate_string):
@@ -307,7 +309,9 @@ class TermExtractor():
         return found_stopword
 
 
-    def parse(self, lemmatized_line):
+    def parse(self, lemmatized_line, term_candidate_list=None):
+        if term_candidate_list is None:
+            term_candidate_list = self.term_candidate_list
         number_of_words_in_sentence = len(lemmatized_line)
 
         #Starting at each successive word in our candidate sentence...
@@ -346,15 +350,15 @@ class TermExtractor():
                         """
                         sentence_string = " ".join(candidate_sentence)
                         if not self.check_for_stopwords(sentence_string):
-                            self.add_candidate_to_global_list(sentence_string)
+                            self.add_candidate_to_global_list(sentence_string, term_candidate_list)
 
 
     def calculate_c_values(self, term_candidate_list=None):
+        if term_candidate_list is None:
+            term_candidate_list = self.term_candidate_list
         wordcount_index = 4
         term_text_index = 0
         c_value_index = 5
-        if term_candidate_list is None:
-            term_candidate_list = self.term_candidate_list
 
         term_candidate_list.sort(key=lambda x: x[4], reverse=True)
 
@@ -402,11 +406,13 @@ class TermExtractor():
                 term[c_value_index] = small_c * (f_a - ((1.0/P_Ta) * SUM_bTa_f_b))
 
 
-    def find_levenshtein_distances(self):
+    def find_levenshtein_distances(self, term_candidate_list=None):
+        if term_candidate_list is None:
+            term_candidate_list = self.term_candidate_list
         number_of_known_terms = len(self.known_term_list)
 
         if( number_of_known_terms > 0 ):
-            for t in self.term_candidate_list:
+            for t in term_candidate_list:
                 lowest_distance = 1000
                 for k in range(1, number_of_known_terms):
 
@@ -423,7 +429,9 @@ class TermExtractor():
                 t[6] = lowest_distance
 
 
-    def find_common_roots(self):
+    def find_common_roots(self, term_candidate_list=None):
+        if term_candidate_list is None:
+            term_candidate_list = self.term_candidate_list
         resources = {
             "modifiers": os.path.join(os.path.dirname(__file__), 'resources', 'modifiers.dawg'),
             "heads": os.path.join(os.path.dirname(__file__), 'resources', 'heads.dawg'),
@@ -432,7 +440,7 @@ class TermExtractor():
         }
         kv = kvistur.Kvistur(**resources)
 
-        for candidate_line in self.term_candidate_list:
+        for candidate_line in term_candidate_list:
             number_of_compound_words = 0
             stem_match_counter = 0
             match_ratio = 0.0
@@ -457,16 +465,17 @@ class TermExtractor():
             candidate_line[7] = match_ratio
 
 
-    def filter_results(self, use_extra_thresholds):
+    def filter_results(self, use_extra_thresholds=False, term_candidate_list=None):
         filtered_terms = []
-        self.extra_thresholds = use_extra_thresholds
+        if term_candidate_list is None:
+            term_candidate_list = self.term_candidate_list
 
         """
         if( (l_distance_threshold is not None) and (stem_ratio_threshold is not None) ):
             extra_thresholds = True
         """
 
-        for t in self.term_candidate_list:
+        for t in term_candidate_list:
 
             """
             First, let's eliminate any candidates that already exist in known_term_list.
@@ -479,7 +488,7 @@ class TermExtractor():
             long enough to affect performance, but if that changes, using "set" or "bisect"
             instead of "in", and pre-alphabetizing the list of known terms, might help.
             """
-            if( self.extra_thresholds and (t[0] in self.known_term_list) ):
+            if( use_extra_thresholds and (t[0] in self.known_term_list) ):
                 #Candidate is a known term, so we won't add it to our filtered list.
                 continue
 
@@ -492,7 +501,7 @@ class TermExtractor():
             if( t[5]>=self.c_value_threshold ):
                 passed_c = True
 
-            if(self.extra_thresholds):
+            if(use_extra_thresholds):
                 if( t[6]<=self.l_distance_threshold ):
                         passed_l = True
                 if( t[7] >= 0.0 ):
@@ -500,11 +509,11 @@ class TermExtractor():
                     if (t[7] >= self.s_ratio_threshold ):
                         passed_s = True
 
-            if( (passed_c) and (not self.extra_thresholds) ):
+            if( (passed_c) and (not use_extra_thresholds) ):
                 current_term.append(t[0])
                 current_term.append(t[5])
                 filtered_terms.append(current_term)
-            elif( (passed_c) or ((self.extra_thresholds) and ((passed_l) or ((s_exists) and (passed_s))))):
+            elif( (passed_c) or ((use_extra_thresholds) and ((passed_l) or ((s_exists) and (passed_s))))):
                 current_term.append(t[0])
                 current_term.append(t[5])
                 current_term.append(t[6])
