@@ -3,7 +3,7 @@
 """
 Requires Python 3.6 or higher, plus the following packages:
 For Reynir: tokenizer, reynir
-For the ABL deep neural marker: numpy, nltk, gspread, 
+For the ABL deep neural marker: numpy, nltk, gspread,
     colored, dyNET, google_api_python_client, plotly, tabulate
 For Levenshtein distance: edlib
 For Kvistur: DAWG-Python
@@ -27,10 +27,11 @@ import kvistur
 
 class TermExtractor():
 
-    def __init__(self, file_known_terms, file_patterns):
+    def __init__(self, file_known_terms, file_patterns, file_stoplist):
         self.file_patterns = file_patterns
         self.file_known_terms = file_known_terms
-        
+        self.file_stoplist = file_stoplist
+
         #Note: Removing the dual-file option for now.
         #self.file_known_terms_lemmas = ""
         #self.file_known_terms_all = ""
@@ -38,34 +39,28 @@ class TermExtractor():
         self.c_value_threshold = 3.0
         self.l_distance_threshold = 15
         self.s_ratio_threshold = 1.5
-        
-        #Hard-coded variables used when the program is run independently,
-        # not as part of a larger scheme or service.
-        self.file_input = "input.txt"
-        self.file_output = "output.txt"
-        self.file_stoplist = "stoplist.txt"
-        
+
         #Reynir is *probably* more reentrant if kept as an instance variable, given
         # that it's going to be continually used for sentence parsing and storage.
         self.r = Reynir()
-        
+
         self.known_term_list = []
         self.pattern_list = []
         self.known_term_list_roots = []
         self.term_candidate_list = []
         self.stop_list = []
         self.term_candidate_list = []
-        
+
         self.load_known_terms()
         self.populate_pattern_list()
         self.load_roots_from_known_terms()
         self.load_stop_list()
 
-  
+
     def load_known_terms(self):
         #Note: Removing the dual-file option for now.
         """
-        def load_known_terms(self, file_lemmas, file_all):  
+        def load_known_terms(self, file_lemmas, file_all):
             if( (file_lemmas) and (not file_all) ):
                 with open(file_lemmas, "r", encoding="utf-8") as f_l:
                     for newline_l in iter(f_l.readline, ''):
@@ -95,7 +90,7 @@ class TermExtractor():
                     line_l_string = line_l_full.rstrip()
                     if( line_l_string ):
                         self.known_term_list.append(line_l_string)
-            file_l.close()       
+            file_l.close()
 
 
     def populate_pattern_list(self):
@@ -147,7 +142,7 @@ class TermExtractor():
 
     def line_tokenize(self, newline):
         list_of_tokenized_words = []
-        
+
         for token in tokenize(newline):
             kind, txt, val = token
             if kind == TOK.WORD:
@@ -163,36 +158,36 @@ class TermExtractor():
 
     def line_lemmatize(self, pos_tagged_sentence):
         lemmatized_words = []
-        
+
         if pos_tagged_sentence.tree is not None:
             number_of_tags = len(pos_tagged_sentence.ifd_tags)
             number_of_words = len(pos_tagged_sentence.lemmas)
             lemma_list_with_dashes = pos_tagged_sentence.lemmas
             ifd_tag_list_with_dashes = pos_tagged_sentence.ifd_tags
-            
+
             """
-            Reynir sometimes inserts dashes ("-") into lemmas and tags. Said dashes may break 
+            Reynir sometimes inserts dashes ("-") into lemmas and tags. Said dashes may break
                 functionality in code that doesn't expect them, including 3rd party programs like
-                ABLTagger and Nefnir. Moreover, anyone maintaining/expanding this code may not 
-                be aware that Reynir does this. 
+                ABLTagger and Nefnir. Moreover, anyone maintaining/expanding this code may not
+                be aware that Reynir does this.
             So let's make sure the lemmas and the IFD tags are dash-free.
             """
             ifd_tag_list_full = [d.replace('-', '') for d in ifd_tag_list_with_dashes]
             lemma_list_spaces = [le.replace('-', '') for le in lemma_list_with_dashes]
-            
+
             """
-            Reynir also occasionally creates a single lemma out of more than one word, which can 
-                lead to a number of problems (including immediate misalignment between the list of words 
-                and the list of corresponding tags). So we check for empty spaces in each lemma and 
+            Reynir also occasionally creates a single lemma out of more than one word, which can
+                lead to a number of problems (including immediate misalignment between the list of words
+                and the list of corresponding tags). So we check for empty spaces in each lemma and
                 split it accordingly, ensuring we always end up with a list of single-word lemmas.
             """
             lemma_list = [space_split_words for unsplit_entry in lemma_list_spaces for space_split_words in unsplit_entry.split(" ")]
             ifd_tag_list = [c[:1] for c in ifd_tag_list_full]
-            
+
             for i in range(0, number_of_tags):
                 word_tuple = (lemma_list[i], ifd_tag_list[i])
                 lemmatized_words.append(word_tuple)
-                
+
         return lemmatized_words
 
 
@@ -216,7 +211,7 @@ class TermExtractor():
 
         return "abl/deepmark.txt.tagged"
 
-       
+
     def text_lemmatize(self, file_tokenized):
         with open (file_tokenized, "r", encoding="utf-8") as abl_extra_lines:
             with open ("Nefnir/abl_output.txt", "w", encoding="utf-8") as abl_out:
@@ -228,7 +223,7 @@ class TermExtractor():
                     elif (str_line != ""):
                         abl_out.write(str_line + "\n")
         abl_extra_lines.close()
-       
+
         subprocess.call(["python3", "nefnir.py", "-i", "abl_output.txt", "-o", "lemmas.txt"], cwd="Nefnir")
 
         lemmatized_lists = []
@@ -256,9 +251,9 @@ class TermExtractor():
                     word_tuple = (str_word, str_category_first_char)
                     current_list_of_tuples.append(word_tuple)
         nefnir_lemmas.close()
-        
+
         return lemmatized_lists
-        
+
 
     def add_candidate_to_global_list(self, candidate_string):
         term_wordcount = len(candidate_string.split())
@@ -275,15 +270,15 @@ class TermExtractor():
 
     def check_for_stopwords(self, candidate_string):
         found_stopword = False
-        
+
         for stop_string in self.stop_list:
             stop_string_regex = "(^|\s)" + stop_string + "(\s|\.|$)"
             stop_pattern = re.compile(stop_string_regex, re.IGNORECASE)
-            
+
             if( stop_pattern.search(candidate_string) is not None ):
                 found_stopword = True
                 return found_stopword
-            
+
         return found_stopword
 
 
@@ -317,7 +312,7 @@ class TermExtractor():
                         """
                         We've completed all comparisons for this particular pattern at this particular
                         offset in our candidate, and we've found a match. Convert candidate_sentence to
-                        a string, check it's free of any stoplist phrases and, if so, add it to our 
+                        a string, check it's free of any stoplist phrases and, if so, add it to our
                         global list of candidates.
                         Note that no matter whether this particular pattern occurred in the sentence,
                         we'll keep checking all other patterns from the *same* starting point in that
@@ -327,19 +322,19 @@ class TermExtractor():
                         sentence_string = " ".join(candidate_sentence)
                         if not self.check_for_stopwords(sentence_string):
                             self.add_candidate_to_global_list(sentence_string)
-                            
-                            
+
+
     def calculate_c_values(self):
         wordcount_index = 4
         term_text_index = 0
         c_value_index = 5
-        
+
         self.term_candidate_list.sort(key=lambda x: x[4], reverse=True)
 
         start = 0
         max_index_number = len(self.term_candidate_list) - 1
         highest_wordcount = self.term_candidate_list[start][wordcount_index]
-        
+
         while (start <= max_index_number) and (self.term_candidate_list[start][wordcount_index] >= highest_wordcount):
             start += 1
 
@@ -350,7 +345,7 @@ class TermExtractor():
         the program will automatically skip the "range" for-loop below.
         """
         i = start
-        
+
         for j in range (start, max_index_number+1):
             if(self.term_candidate_list[j][wordcount_index] < self.term_candidate_list[i][wordcount_index]):
                 i = j
@@ -358,7 +353,7 @@ class TermExtractor():
                 if self.term_candidate_list[j][term_text_index] in self.term_candidate_list[larger_term][term_text_index]:
                     """
                     Index 2 is the sum of non-nested occurrences of every larger term that
-                    contains j a subterm (i.e. each larger term's total frequency minus its 
+                    contains j a subterm (i.e. each larger term's total frequency minus its
                     frequency specifically as a subterm of some even *larger* term).
                     """
                     self.term_candidate_list[j][2] += (self.term_candidate_list[larger_term][1] - self.term_candidate_list[larger_term][2])
@@ -366,7 +361,7 @@ class TermExtractor():
                     self.term_candidate_list[j][3] += 1
 
         for term in self.term_candidate_list:
-        
+
             log2a = math.log(term[wordcount_index], 2.0)
             constant_i = 1.0
             small_c = constant_i + log2a
@@ -409,7 +404,7 @@ class TermExtractor():
             "splits": os.path.join(os.path.dirname(__file__), 'resources', 'splits.dawg')
         }
         kv = kvistur.Kvistur(**resources)
-        
+
         for candidate_line in self.term_candidate_list:
             number_of_compound_words = 0
             stem_match_counter = 0
@@ -426,12 +421,12 @@ class TermExtractor():
                         for segmented_word in known_roots_line:
                             if(candidate_last_stem == segmented_word[-1]):
                                 stem_match_counter += 1
-            
+
             if( number_of_compound_words < 1 ):
                 match_ratio = -1.0
             else:
                 match_ratio = stem_match_counter/number_of_compound_words
-            
+
             candidate_line[7] = match_ratio
 
 
@@ -443,7 +438,7 @@ class TermExtractor():
         if( (l_distance_threshold is not None) and (stem_ratio_threshold is not None) ):
             extra_thresholds = True
         """
-        
+
         for t in self.term_candidate_list:
 
             """
@@ -460,13 +455,13 @@ class TermExtractor():
             if( self.extra_thresholds and (t[0] in self.known_term_list) ):
                 #Candidate is a known term, so we won't add it to our filtered list.
                 continue
-            
+
             current_term = []
             passed_c = False
             passed_l = False
             s_exists = False
             passed_s = False
-            
+
             if( t[5]>=self.c_value_threshold ):
                 passed_c = True
 
@@ -477,7 +472,7 @@ class TermExtractor():
                     s_exists = True
                     if (t[7] >= self.s_ratio_threshold ):
                         passed_s = True
-            
+
             if( (passed_c) and (not self.extra_thresholds) ):
                 current_term.append(t[0])
                 current_term.append(t[5])
@@ -488,7 +483,7 @@ class TermExtractor():
                 current_term.append(t[6])
                 current_term.append(t[7])
                 filtered_terms.append(current_term)
-        
+
         return filtered_terms
 
 
