@@ -23,7 +23,9 @@ import argparse
 from reynir import Reynir
 from tokenizer import tokenize, TOK
 import kvistur
+import requests
 
+API_LOCATION = "http://localhost:5003"
 
 class TermExtractor():
 
@@ -254,6 +256,29 @@ class TermExtractor():
 
         return lemmatized_lists
 
+    @staticmethod
+    def tag_and_lemmatize(text):
+        """
+        Input: Tokenized text, encoded as a list of lists of words.
+            Each sublist is a tokenized phrase
+        Output: A list of lists of tuples containing lemmas, tags, and words
+        """
+        res = requests.post(
+            url=API_LOCATION,
+            data={'txt':text, 'model_type':'coarse', 'check_lemma':'on'})
+        print(res)
+        reslist = res.json()['markad']
+        outputs = []
+        sentence = []
+        for word_obj in reslist:
+            lemma, mark, ord = (word_obj['lemma'], word_obj['mark'], word_obj['orð'])
+            if lemma == '<EOS>' and mark == '<EOS>' and len(sentence):
+                outputs.append(sentence)
+                sentence = []
+            else:
+                sentence.append((lemma, mark, ord))
+        return outputs
+
 
     def add_candidate_to_global_list(self, candidate_string):
         term_wordcount = len(candidate_string.split())
@@ -324,18 +349,20 @@ class TermExtractor():
                             self.add_candidate_to_global_list(sentence_string)
 
 
-    def calculate_c_values(self):
+    def calculate_c_values(self, term_candidate_list=None):
         wordcount_index = 4
         term_text_index = 0
         c_value_index = 5
+        if term_candidate_list is None:
+            term_candidate_list = self.term_candidate_list
 
-        self.term_candidate_list.sort(key=lambda x: x[4], reverse=True)
+        term_candidate_list.sort(key=lambda x: x[4], reverse=True)
 
         start = 0
-        max_index_number = len(self.term_candidate_list) - 1
-        highest_wordcount = self.term_candidate_list[start][wordcount_index]
+        max_index_number = len(term_candidate_list) - 1
+        highest_wordcount = term_candidate_list[start][wordcount_index]
 
-        while (start <= max_index_number) and (self.term_candidate_list[start][wordcount_index] >= highest_wordcount):
+        while (start <= max_index_number) and (term_candidate_list[start][wordcount_index] >= highest_wordcount):
             start += 1
 
         """
@@ -347,20 +374,20 @@ class TermExtractor():
         i = start
 
         for j in range (start, max_index_number+1):
-            if(self.term_candidate_list[j][wordcount_index] < self.term_candidate_list[i][wordcount_index]):
+            if(term_candidate_list[j][wordcount_index] < term_candidate_list[i][wordcount_index]):
                 i = j
             for larger_term in range(0, i):
-                if self.term_candidate_list[j][term_text_index] in self.term_candidate_list[larger_term][term_text_index]:
+                if term_candidate_list[j][term_text_index] in term_candidate_list[larger_term][term_text_index]:
                     """
                     Index 2 is the sum of non-nested occurrences of every larger term that
                     contains j a subterm (i.e. each larger term's total frequency minus its
                     frequency specifically as a subterm of some even *larger* term).
                     """
-                    self.term_candidate_list[j][2] += (self.term_candidate_list[larger_term][1] - self.term_candidate_list[larger_term][2])
+                    term_candidate_list[j][2] += (term_candidate_list[larger_term][1] - term_candidate_list[larger_term][2])
                     #Index 3 is the number of *unique* larger terms of which j is a subterm.
-                    self.term_candidate_list[j][3] += 1
+                    term_candidate_list[j][3] += 1
 
-        for term in self.term_candidate_list:
+        for term in term_candidate_list:
 
             log2a = math.log(term[wordcount_index], 2.0)
             constant_i = 1.0
