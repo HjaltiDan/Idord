@@ -307,12 +307,11 @@ class TermExtractor():
             stop_string_regex = "(^|\s)" + stop_string + "(\s|\.|$)"
             stop_pattern = re.compile(stop_string_regex, re.IGNORECASE)
 
-            if( stop_pattern.search(candidate_string) is not None ):
+            if(stop_pattern.search(candidate_string) is not None):
                 found_stopword = True
                 return found_stopword
 
         return found_stopword
-
 
     def parse(self, lemmatized_line, term_candidate_list=None):
         if term_candidate_list is None:
@@ -323,14 +322,14 @@ class TermExtractor():
         for sentence_word_index, current_word in enumerate(lemmatized_line):
             #...go through every category pattern that's sufficiently short...
             for pattern_index, pattern_type in enumerate(self.pattern_list):
-                if( len(pattern_type) + sentence_word_index <= number_of_words_in_sentence ):
+                if(len(pattern_type) + sentence_word_index <= number_of_words_in_sentence):
                     match = True
                     candidate_sentence = []
                     unlemmatized_words = []
                     pattern_range = len(pattern_type)
-                    #...and compare side-by-side the sequence of pattern tags and word tags.
+                    # ...and compare side-by-side the sequence of pattern tags and word tags.
                     for category_index, category_type in enumerate(pattern_type):
-                        if( category_type != lemmatized_line[sentence_word_index+category_index][1] ):
+                        if(category_type != lemmatized_line[sentence_word_index+category_index][1]):
                             """
                             If we spot a mismatch, immediately stop checking this particular pattern,
                             break the innermost "for" loop, and begin checking the next pattern.
@@ -430,7 +429,7 @@ class TermExtractor():
                     """
                     curr_lev_comparison = edlib.align(t["lemmas"], known, mode="NW", task="distance")
                     curr_lev_distance = curr_lev_comparison["editDistance"]
-                    if( curr_lev_distance < lowest_distance):
+                    if(curr_lev_distance < lowest_distance):
                         lowest_distance = curr_lev_distance
                 t["distance"] = lowest_distance
 
@@ -454,7 +453,7 @@ class TermExtractor():
                 score, tree = kv.decompound(candidate_word)
                 candidate_compound_list = []
                 candidate_compound_list = tree.get_atoms()
-                if( len(candidate_compound_list) > 1):
+                if(len(candidate_compound_list) > 1):
                     number_of_compound_words += 1
                     candidate_last_stem = candidate_compound_list[-1]
                     for known_roots_line in self.known_term_list_roots:
@@ -462,7 +461,7 @@ class TermExtractor():
                             if(candidate_last_stem == segmented_word[-1]):
                                 stem_match_counter += 1
 
-            if( number_of_compound_words < 1 ):
+            if(number_of_compound_words < 1):
                 match_ratio = -1.0
             else:
                 match_ratio = stem_match_counter/number_of_compound_words
