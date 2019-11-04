@@ -18,7 +18,7 @@ import math
 import subprocess
 import edlib
 import nltk
-nltk.download('punkt')
+# nltk.download('punkt')
 import argparse
 from reynir import Reynir
 from tokenizer import tokenize, TOK
@@ -269,8 +269,11 @@ class TermExtractor():
             outputs.append(output_sentence)
         return outputs
 
-
-    def add_candidate_to_global_list(self, candidate_string, term_candidate_list = None):
+    def add_candidate_to_global_list(self,
+                                     candidate_string,
+                                     unlemmatized_string,
+                                     wrapping_sentence,
+                                     term_candidate_list=None):
         if term_candidate_list is None:
             term_candidate_list = self.term_candidate_list
         term_wordcount = len(candidate_string.split())
@@ -294,6 +297,7 @@ class TermExtractor():
                 "distance": 0,
                 "s_ratio": -1,
                 "occurences": set((unlemmatized_string,)),
+                "sentence": wrapping_sentence
             })
 
     def check_for_stopwords(self, candidate_string):
@@ -322,6 +326,7 @@ class TermExtractor():
                 if( len(pattern_type) + sentence_word_index <= number_of_words_in_sentence ):
                     match = True
                     candidate_sentence = []
+                    unlemmatized_words = []
                     pattern_range = len(pattern_type)
                     #...and compare side-by-side the sequence of pattern tags and word tags.
                     for category_index, category_type in enumerate(pattern_type):
@@ -338,6 +343,7 @@ class TermExtractor():
                             add that one word to candidate_sentence[] and check the next word in line.
                             """
                             candidate_sentence.append(lemmatized_line[sentence_word_index+category_index][0])
+                            unlemmatized_words.append(lemmatized_line[sentence_word_index+category_index][2])
                     if(match):
                         """
                         We've completed all comparisons for this particular pattern at this particular
@@ -350,9 +356,13 @@ class TermExtractor():
                         As a result, we're counting all candidate occurrences, including nested ones.
                         """
                         sentence_string = " ".join(candidate_sentence)
+                        unlemmatized_phrase = " ".join(unlemmatized_words)
                         if not self.check_for_stopwords(sentence_string):
-                            self.add_candidate_to_global_list(sentence_string, term_candidate_list)
-
+                            self.add_candidate_to_global_list(
+                                sentence_string,
+                                unlemmatized_phrase,
+                                lemmatized_line,
+                                term_candidate_list)
 
     def calculate_c_values(self, term_candidate_list=None):
         if term_candidate_list is None:
@@ -503,8 +513,10 @@ class TermExtractor():
                         passed_s = True
 
             if((passed_c) and (not use_extra_thresholds)):
+                t["sentence"] = " ".join([x[2] for x in t["sentence"]])
                 filtered_terms.append(t)
             elif((passed_c) or ((use_extra_thresholds) and ((passed_l) or (passed_s)))):
+                t["sentence"] = " ".join([x[2] for x in t["sentence"]])
                 filtered_terms.append(t)
 
         return filtered_terms
