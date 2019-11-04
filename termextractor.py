@@ -251,24 +251,22 @@ class TermExtractor():
     @staticmethod
     def tag_and_lemmatize(text):
         """
-        Input: Tokenized text, encoded as a list of lists of words.
-            Each sublist is a tokenized phrase
+        Input: A text string.
         Output: A list of lists of tuples containing lemmas, tags, and words
         """
         res = requests.post(
             url=API_LOCATION,
-            data={'txt':text, 'model_type':'coarse', 'check_lemma':'on'})
-        print(res)
-        reslist = res.json()['markad']
+            data={'text': text, 'model_type': 'coarse', 'lemma': 'on'})
+        # print(res)
+        sentences = res.json()['sentences']
         outputs = []
         sentence = []
-        for word_obj in reslist:
-            lemma, mark, ord = (word_obj['lemma'], word_obj['mark'], word_obj['orð'])
-            if lemma == '<EOS>' and mark == '<EOS>' and len(sentence):
-                outputs.append(sentence)
-                sentence = []
-            else:
-                sentence.append((lemma, mark, ord))
+        for sentence in sentences:
+            output_sentence = []
+            for word_obj in sentence:
+                lemma, mark, ord = (word_obj['lemma'], word_obj['tag'], word_obj['word'])
+                output_sentence.append((lemma, mark, ord))
+            outputs.append(output_sentence)
         return outputs
 
 
