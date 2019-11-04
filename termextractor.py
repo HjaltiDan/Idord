@@ -277,13 +277,24 @@ class TermExtractor():
         term_already_exists = False
 
         for existing_entry in term_candidate_list:
-            if existing_entry[0] == candidate_string:
+            if existing_entry["lemmas"] == candidate_string:
                 term_already_exists = True
-                existing_entry[1] += 1
+                # existing_entry["original"][1] += 1
+                existing_entry["frequency"] += 1
+                existing_entry["occurences"].add(unlemmatized_string)
                 break
         if not term_already_exists:
-            term_candidate_list.append([candidate_string, 1, 0, 0, term_wordcount, 0.0, 0, -1.0])
-
+            term_candidate_list.append({
+                "lemmas": candidate_string,
+                "frequency": 1,
+                "parent_count": 0,
+                "parent_types": 0,
+                "wordcount": term_wordcount,
+                "c_value": 0.0,
+                "distance": 0,
+                "s_ratio": -1,
+                "occurences": set((unlemmatized_string,)),
+            })
 
     def check_for_stopwords(self, candidate_string):
         found_stopword = False
@@ -346,17 +357,14 @@ class TermExtractor():
     def calculate_c_values(self, term_candidate_list=None):
         if term_candidate_list is None:
             term_candidate_list = self.term_candidate_list
-        wordcount_index = 4
-        term_text_index = 0
-        c_value_index = 5
 
-        term_candidate_list.sort(key=lambda x: x[4], reverse=True)
+        term_candidate_list.sort(key=lambda x: x["wordcount"], reverse=True)
 
         start = 0
         max_index_number = len(term_candidate_list) - 1
-        highest_wordcount = term_candidate_list[start][wordcount_index]
+        highest_wordcount = term_candidate_list[start]["wordcount"]
 
-        while (start <= max_index_number) and (term_candidate_list[start][wordcount_index] >= highest_wordcount):
+        while (start <= max_index_number) and (term_candidate_list[start]["wordcount"] >= highest_wordcount):
             start += 1
 
         """
@@ -367,44 +375,42 @@ class TermExtractor():
         """
         i = start
 
-        for j in range (start, max_index_number+1):
-            if(term_candidate_list[j][wordcount_index] < term_candidate_list[i][wordcount_index]):
+        for j, term in enumerate(term_candidate_list[start:max_index_number+1]):
+            if(term["wordcount"] < term_candidate_list[i]["wordcount"]):
                 i = j
-            for larger_term in range(0, i):
-                if term_candidate_list[j][term_text_index] in term_candidate_list[larger_term][term_text_index]:
+            for larger_term in term_candidate_list[0:i]:
+                if term["lemmas"] in larger_term["lemmas"]:
                     """
                     Index 2 is the sum of non-nested occurrences of every larger term that
                     contains j a subterm (i.e. each larger term's total frequency minus its
                     frequency specifically as a subterm of some even *larger* term).
                     """
-                    term_candidate_list[j][2] += (term_candidate_list[larger_term][1] - term_candidate_list[larger_term][2])
+                    term["parent_count"] += (larger_term["frequency"] - larger_term["parent_count"])
                     #Index 3 is the number of *unique* larger terms of which j is a subterm.
-                    term_candidate_list[j][3] += 1
+                    term["parent_types"] += 1
 
         for term in term_candidate_list:
 
-            log2a = math.log(term[wordcount_index], 2.0)
+            log2a = math.log(term["wordcount"], 2.0)
             constant_i = 1.0
             small_c = constant_i + log2a
-            f_a = term[1]
-            SUM_bTa_f_b = term[2]
-            P_Ta = term[3]
+            f_a = term["frequency"]
+            SUM_bTa_f_b = term["parent_count"]
+            P_Ta = term["parent_types"]
 
-            if (term[wordcount_index] == highest_wordcount) or (P_Ta < 1):
-                term[c_value_index] = small_c * f_a
+            if (term["wordcount"] == highest_wordcount) or (P_Ta < 1):
+                term["c_value"] = small_c * f_a
             else:
-                term[c_value_index] = small_c * (f_a - ((1.0/P_Ta) * SUM_bTa_f_b))
-
+                term["c_value"] = small_c * (f_a - ((1.0/P_Ta) * SUM_bTa_f_b))
 
     def find_levenshtein_distances(self, term_candidate_list=None):
         if term_candidate_list is None:
             term_candidate_list = self.term_candidate_list
-        number_of_known_terms = len(self.known_term_list)
 
-        if( number_of_known_terms > 0 ):
+        if(len(self.known_term_list) > 0):
             for t in term_candidate_list:
                 lowest_distance = 1000
-                for k in range(1, number_of_known_terms):
+                for known in self.known_term_list:
 
                     """
                     1) mode="NW" means the candidate must be an exact match for a known term.
@@ -412,12 +418,11 @@ class TermExtractor():
                     2) task="distance" avoids wasting time trying to chart an optimal L-path (which we're
                     not looking for anyway).
                     """
-                    curr_lev_comparison = edlib.align(t[0], self.known_term_list[k], mode="NW", task="distance")
+                    curr_lev_comparison = edlib.align(t["lemmas"], known, mode="NW", task="distance")
                     curr_lev_distance = curr_lev_comparison["editDistance"]
                     if( curr_lev_distance < lowest_distance):
                         lowest_distance = curr_lev_distance
-                t[6] = lowest_distance
-
+                t["distance"] = lowest_distance
 
     def find_common_roots(self, term_candidate_list=None):
         if term_candidate_list is None:
@@ -434,7 +439,7 @@ class TermExtractor():
             number_of_compound_words = 0
             stem_match_counter = 0
             match_ratio = 0.0
-            candidate_word_list = candidate_line[0].split()
+            candidate_word_list = candidate_line["lemmas"].split()
             for candidate_word in candidate_word_list:
                 score, tree = kv.decompound(candidate_word)
                 candidate_compound_list = []
@@ -452,8 +457,7 @@ class TermExtractor():
             else:
                 match_ratio = stem_match_counter/number_of_compound_words
 
-            candidate_line[7] = match_ratio
-
+            candidate_line["s_ratio"] = match_ratio
 
     def filter_results(self, use_extra_thresholds=False, term_candidate_list=None):
         filtered_terms = []
@@ -478,37 +482,30 @@ class TermExtractor():
             long enough to affect performance, but if that changes, using "set" or "bisect"
             instead of "in", and pre-alphabetizing the list of known terms, might help.
             """
-            if( use_extra_thresholds and (t[0] in self.known_term_list) ):
+            if( use_extra_thresholds and (t["lemmas"] in self.known_term_list) ):
                 #Candidate is a known term, so we won't add it to our filtered list.
                 continue
 
-            current_term = []
             passed_c = False
             passed_l = False
             s_exists = False
             passed_s = False
 
-            if( t[5]>=self.c_value_threshold ):
+            if(t["c_value"]>=self.c_value_threshold):
                 passed_c = True
 
             if(use_extra_thresholds):
-                if( t[6]<=self.l_distance_threshold ):
-                        passed_l = True
-                if( t[7] >= 0.0 ):
+                if( t["distance"]<=self.l_distance_threshold):
+                    passed_l = True
+                if( t["s_ratio"] >= 0.0 ):
                     s_exists = True
-                    if (t[7] >= self.s_ratio_threshold ):
+                    if (t["s_ratio"] >= self.s_ratio_threshold):
                         passed_s = True
 
-            if( (passed_c) and (not use_extra_thresholds) ):
-                current_term.append(t[0])
-                current_term.append(t[5])
-                filtered_terms.append(current_term)
-            elif( (passed_c) or ((use_extra_thresholds) and ((passed_l) or ((s_exists) and (passed_s))))):
-                current_term.append(t[0])
-                current_term.append(t[5])
-                current_term.append(t[6])
-                current_term.append(t[7])
-                filtered_terms.append(current_term)
+            if((passed_c) and (not use_extra_thresholds)):
+                filtered_terms.append(t)
+            elif((passed_c) or ((use_extra_thresholds) and ((passed_l) or (passed_s)))):
+                filtered_terms.append(t)
 
         return filtered_terms
 
