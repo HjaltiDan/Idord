@@ -25,7 +25,8 @@ from tokenizer import tokenize, TOK
 import kvistur
 import requests
 
-API_LOCATION = "http://localhost:5003"
+API_LOCATION = "http://malvinnsla.arnastofnun.is"
+
 
 class TermExtractor():
 
@@ -57,7 +58,6 @@ class TermExtractor():
         self.populate_pattern_list()
         self.load_roots_from_known_terms()
         self.load_stop_list()
-
 
     def load_known_terms(self):
         #Note: Removing the dual-file option for now.
@@ -94,7 +94,6 @@ class TermExtractor():
                         self.known_term_list.append(line_l_string)
             file_l.close()
 
-
     def populate_pattern_list(self):
         if( self.file_patterns ):
             with open(self.file_patterns, "r", encoding="utf-8") as file_p:
@@ -102,7 +101,6 @@ class TermExtractor():
                     line_p_list = [ifd_tag[0] for ifd_tag in line_p_str.split()]
                     self.pattern_list.append(line_p_list)
             file_p.close()
-
 
     def load_roots_from_known_terms(self):
         if( len(self.known_term_list)>0 ):
@@ -126,7 +124,6 @@ class TermExtractor():
                 if( len(root_line) > 0):
                     self.known_term_list_roots.append(root_line)
 
-
     def load_stop_list(self):
         if( self.file_stoplist ):
             with open(self.file_stoplist, "r", encoding="utf-8") as file_s:
@@ -141,7 +138,6 @@ class TermExtractor():
                         self.stop_list.append(line_s_string)
             file_s.close()
 
-
     def line_tokenize(self, newline):
         list_of_tokenized_words = []
 
@@ -151,12 +147,10 @@ class TermExtractor():
                 list_of_tokenized_words.append(txt)
         return list_of_tokenized_words
 
-
     def line_tag(self, tokenized_list):
         str_tokens = " ".join(tokenized_list)
         parsed_tokens = self.r.parse_single(str_tokens)
         return parsed_tokens
-
 
     def line_lemmatize(self, pos_tagged_sentence):
         lemmatized_words = []
@@ -192,7 +186,6 @@ class TermExtractor():
 
         return lemmatized_words
 
-
     def text_tag(self, tok_text, model_type):
         """
         ABLTagger strongly prefers that each phrase end with some kind of punctuation.
@@ -212,7 +205,6 @@ class TermExtractor():
         subprocess.call(["python3", "tag.py", "--input", "deepmark.txt", "--model", model_type], cwd="abl")
 
         return "abl/deepmark.txt.tagged"
-
 
     def text_lemmatize(self, file_tokenized):
         with open (file_tokenized, "r", encoding="utf-8") as abl_extra_lines:
@@ -521,7 +513,6 @@ class TermExtractor():
                 filtered_terms.append(current_term)
 
         return filtered_terms
-
 
 
 ##### Class TermExtractor ends #####
