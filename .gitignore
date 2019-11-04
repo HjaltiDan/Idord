@@ -1,2 +1,4 @@
 resources/
 __pycache__/
+default_patterns.txt
+kvistur.py
