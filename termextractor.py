@@ -22,7 +22,7 @@ import nltk
 import argparse
 from reynir import Reynir
 from tokenizer import tokenize, TOK
-import kvistur
+import idord.kvistur
 import requests
 
 API_LOCATION = "http://malvinnsla.arnastofnun.is"
@@ -48,7 +48,7 @@ class TermExtractor():
         self.r = Reynir()
 
         self.known_term_list = []
-        self.pattern_list = []
+        self.pattern_list = {}
         self.known_term_list_roots = []
         self.term_candidate_list = []
         self.stop_list = []
@@ -96,10 +96,20 @@ class TermExtractor():
 
     def populate_pattern_list(self):
         if( self.file_patterns ):
+            self.pattern_list[tuple()] = True
             with open(self.file_patterns, "r", encoding="utf-8") as file_p:
-                for line_p_str in file_p:
-                    line_p_list = [ifd_tag[0] for ifd_tag in line_p_str.split()]
-                    self.pattern_list.append(line_p_list)
+                for line_p in file_p:
+                    tag_seq = []
+                    for tag in line_p.split():
+                        # only uses first character of tag
+                        tag_seq.append(tag[0])
+                        # set this sequence's value to false because pattern is incomplete.
+                        if tuple(tag_seq) not in self.pattern_list:
+                            self.pattern_list[tuple(tag_seq)] = False
+                    self.pattern_list[tuple(tag_seq)] = True
+                    # line_p_list = tuple(ifd_tag[0] for ifd_tag in line_p_str.split())
+                    # self.pattern_list.add(line_p_list)
+            # print(self.pattern_list)
             file_p.close()
 
     def load_roots_from_known_terms(self):
@@ -254,25 +264,41 @@ class TermExtractor():
         Input: A text string.
         Output: A list of lists of tuples containing lemmas, tags, and words
         """
+
+        HYPHENS = "-–—" # HACK: hotfix because of stupid tokenizer normalisation
+        DQUOTES = '"“„”«»' # HACK: hotfix because of stupid tokenizer normalisation
         res = requests.post(
             url=API_LOCATION,
             data={'text': text, 'model_type': 'coarse', 'lemma': 'on'})
-        # print(res)
-        sentences = res.json()['sentences']
+        sentences = [sent for para in res.json()['paragraphs'] for sent in para['sentences']]
+        # print(sentences)
         outputs = []
         sentence = []
+        text_locations = []
+        i = 0
         for sentence in sentences:
             output_sentence = []
             for word_obj in sentence:
                 lemma, mark, ord = (word_obj['lemma'], word_obj['tag'], word_obj['word'])
-                output_sentence.append((lemma, mark, ord))
+                while not text[i:i+len(ord)] == ord:
+                    # HACK: Same hack as above
+                    if text[i:i+len(ord)] in HYPHENS and ord in HYPHENS:
+                        break
+                    if text[i:i+len(ord)] in DQUOTES and ord in DQUOTES:
+                        break
+                    i+=1
+                    # print(text[i:i+len(ord)], ord)
+                    if i>len(text):
+                        break
+                output_sentence.append((lemma, mark, ord, i))
+                i+=len(ord)
             outputs.append(output_sentence)
         return outputs
 
     def add_candidate_to_global_list(self,
                                      candidate_string,
                                      unlemmatized_string,
-                                     wrapping_sentence,
+                                     start_end,
                                      term_candidate_list=None):
         if term_candidate_list is None:
             term_candidate_list = self.term_candidate_list
@@ -284,7 +310,8 @@ class TermExtractor():
                 term_already_exists = True
                 # existing_entry["original"][1] += 1
                 existing_entry["frequency"] += 1
-                existing_entry["occurences"].add(unlemmatized_string)
+                existing_entry["occurences"].append(unlemmatized_string)
+                existing_entry["boundaries"].append(start_end)
                 break
         if not term_already_exists:
             term_candidate_list.append({
@@ -296,8 +323,8 @@ class TermExtractor():
                 "c_value": 0.0,
                 "distance": 0,
                 "s_ratio": -1,
-                "occurences": set((unlemmatized_string,)),
-                "sentence": wrapping_sentence
+                "occurences": [(unlemmatized_string,)],
+                "boundaries": [start_end]
             })
 
     def check_for_stopwords(self, candidate_string):
@@ -316,52 +343,87 @@ class TermExtractor():
     def parse(self, lemmatized_line, term_candidate_list=None):
         if term_candidate_list is None:
             term_candidate_list = self.term_candidate_list
-        number_of_words_in_sentence = len(lemmatized_line)
+        pl = self.pattern_list
+        sentence_length = len(lemmatized_line)
 
-        #Starting at each successive word in our candidate sentence...
-        for sentence_word_index, current_word in enumerate(lemmatized_line):
-            #...go through every category pattern that's sufficiently short...
-            for pattern_index, pattern_type in enumerate(self.pattern_list):
-                if(len(pattern_type) + sentence_word_index <= number_of_words_in_sentence):
-                    match = True
-                    candidate_sentence = []
-                    unlemmatized_words = []
-                    pattern_range = len(pattern_type)
-                    # ...and compare side-by-side the sequence of pattern tags and word tags.
-                    for category_index, category_type in enumerate(pattern_type):
-                        if(category_type != lemmatized_line[sentence_word_index+category_index][1]):
-                            """
-                            If we spot a mismatch, immediately stop checking this particular pattern,
-                            break the innermost "for" loop, and begin checking the next pattern.
-                            """
-                            match = False
-                            break
-                        else:
-                            """
-                            If there's a match between the pattern tag and the word tag at this particular offset,
-                            add that one word to candidate_sentence[] and check the next word in line.
-                            """
-                            candidate_sentence.append(lemmatized_line[sentence_word_index+category_index][0])
-                            unlemmatized_words.append(lemmatized_line[sentence_word_index+category_index][2])
-                    if(match):
-                        """
-                        We've completed all comparisons for this particular pattern at this particular
-                        offset in our candidate, and we've found a match. Convert candidate_sentence to
-                        a string, check it's free of any stoplist phrases and, if so, add it to our
-                        global list of candidates.
-                        Note that no matter whether this particular pattern occurred in the sentence,
-                        we'll keep checking all other patterns from the *same* starting point in that
-                        sentence *before* we move our starting point to the sentence's next word in line.
-                        As a result, we're counting all candidate occurrences, including nested ones.
-                        """
-                        sentence_string = " ".join(candidate_sentence)
-                        unlemmatized_phrase = " ".join(unlemmatized_words)
-                        if not self.check_for_stopwords(sentence_string):
-                            self.add_candidate_to_global_list(
-                                sentence_string,
-                                unlemmatized_phrase,
-                                lemmatized_line,
-                                term_candidate_list)
+        # O(n*(complexity of inner loop)) => O(n*O(1)) == O(n)
+        # Improves upon earlier implementation in that complexity doesn't vary by number of patterns
+        for i in range(len(lemmatized_line)):
+            lemmas = []
+            words = []
+            tags = []
+            start_index = lemmatized_line[i][3]
+            tag_tuple = tuple()
+            j = 0
+            # Dict membership check is O(1)
+            # tuple conversion is O(k) with k<length of longest pattern so O(1)
+            while tag_tuple in pl and i+j < sentence_length:
+                lemma, tag, word, idx = lemmatized_line[i+j]
+                lemmas.append(lemma)
+                words.append(word)
+                tags.append(tag)
+                tag_tuple = tuple(tags)
+                if tag_tuple in pl and pl[tag_tuple]:
+                    end_index = idx + len(word)
+                    lemma_string = " ".join(lemmas)
+                    word_string = " ".join(words)
+                    start_end = [str(start_index), str(end_index)]
+                    if not self.check_for_stopwords(lemma_string):
+                        self.add_candidate_to_global_list(
+                            lemma_string,
+                            word_string,
+                            start_end,
+                            term_candidate_list)
+
+                j+=1
+
+        # #Starting at each successive word in our candidate sentence...
+        # for sentence_word_index, current_word in enumerate(lemmatized_line):
+        # O(k*n*m) where k is no. of patterns, n is length of sentence and m is length of longest pattern
+        # m is generally low so ~O(k*n)
+        #
+        #     #...go through every category pattern that's sufficiently short...
+        #     for pattern_index, pattern_type in enumerate(self.pattern_list):
+        #         if(len(pattern_type) + sentence_word_index <= sentence_length):
+        #             match = True
+        #             candidate_sentence = []
+        #             unlemmatized_words = []
+        #             pattern_range = len(pattern_type)
+        #             # ...and compare side-by-side the sequence of pattern tags and word tags.
+        #             for category_index, category_type in enumerate(pattern_type):
+        #                 if(category_type != lemmatized_line[sentence_word_index+category_index][1]):
+        #                     """
+        #                     If we spot a mismatch, immediately stop checking this particular pattern,
+        #                     break the innermost "for" loop, and begin checking the next pattern.
+        #                     """
+        #                     match = False
+        #                     break
+        #                 else:
+        #                     """
+        #                     If there's a match between the pattern tag and the word tag at this particular offset,
+        #                     add that one word to candidate_sentence[] and check the next word in line.
+        #                     """
+        #                     candidate_sentence.append(lemmatized_line[sentence_word_index+category_index][0])
+        #                     unlemmatized_words.append(lemmatized_line[sentence_word_index+category_index][2])
+        #             if(match):
+        #                 """
+        #                 We've completed all comparisons for this particular pattern at this particular
+        #                 offset in our candidate, and we've found a match. Convert candidate_sentence to
+        #                 a string, check it's free of any stoplist phrases and, if so, add it to our
+        #                 global list of candidates.
+        #                 Note that no matter whether this particular pattern occurred in the sentence,
+        #                 we'll keep checking all other patterns from the *same* starting point in that
+        #                 sentence *before* we move our starting point to the sentence's next word in line.
+        #                 As a result, we're counting all candidate occurrences, including nested ones.
+        #                 """
+        #                 sentence_string = " ".join(candidate_sentence)
+        #                 unlemmatized_phrase = " ".join(unlemmatized_words)
+        #                 if not self.check_for_stopwords(sentence_string):
+        #                     self.add_candidate_to_global_list(
+        #                         sentence_string,
+        #                         unlemmatized_phrase,
+        #                         lemmatized_line,
+        #                         term_candidate_list)
 
     def calculate_c_values(self, term_candidate_list=None):
         if term_candidate_list is None:
@@ -512,13 +574,28 @@ class TermExtractor():
                         passed_s = True
 
             if((passed_c) and (not use_extra_thresholds)):
-                t["sentence"] = " ".join([x[2] for x in t["sentence"]])
+                # t["sentence"] = " ".join([x[2] for x in t["sentence"]])
                 filtered_terms.append(t)
             elif((passed_c) or ((use_extra_thresholds) and ((passed_l) or (passed_s)))):
-                t["sentence"] = " ".join([x[2] for x in t["sentence"]])
+                # t["sentence"] = " ".join([x[2] for x in t["sentence"]])
                 filtered_terms.append(t)
 
         return filtered_terms
 
+    def convert_list_output(self, term_candidate_list=None):
+        if term_candidate_list is None:
+            term_candidate_list = self.term_candidate_list
+        return [
+            [
+                x["lemmas"],
+                x["frequency"],
+                x["parent_count"],
+                x["parent_types"],
+                x["wordcount"],
+                x["c_value"],
+                x["distance"],
+                x["s_ratio"]]
+            for x in term_candidate_list
+        ]
 
 ##### Class TermExtractor ends #####
